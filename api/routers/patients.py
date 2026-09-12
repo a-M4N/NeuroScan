@@ -2,14 +2,23 @@
 Basic patient CRUD + scan/prediction history lookup.
 """
 
+import logging
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.db.database import get_db
-from api.db.models import Patient
+from api.db.models import Patient, Report
+from api.core.report_builder import build_structured_findings
+from api.core.narrative import generate_narrative_report
+from api.core.pdf_export import generate_report_pdf
+from api.schemas.report import ReportResponse, ReportListItem
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -99,3 +108,102 @@ def get_patient_predictions(patient_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Patient not found.")
     predictions = [p for scan in patient.scans for p in scan.predictions]
     return predictions
+
+
+@router.post("/{patient_id}/report", response_model=ReportResponse, status_code=201)
+def generate_patient_report(patient_id: int, db: Session = Depends(get_db)):
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found.")
+
+    findings = build_structured_findings(patient_id, db)
+    narrative = generate_narrative_report(findings)
+
+    generated_at = datetime.utcnow()
+    report_id = None
+    pdf_path = None
+
+    try:
+        report = Report(
+            patient_id=patient.id,
+            narrative_text=narrative,
+            pdf_path=None,
+            generated_at=generated_at,
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        report_id = report.id
+        generated_at = report.generated_at
+
+        # Attempt non-fatal PDF generation immediately upon report creation
+        try:
+            pdf_path = generate_report_pdf(report.id, db)
+        except Exception:
+            logger.exception(f"Non-fatal error generating PDF for report {report.id}")
+            pdf_path = None
+
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to persist Report row; continuing non-fatally")
+
+    return ReportResponse(
+        id=report_id,
+        patient_id=patient.id,
+        generated_at=generated_at,
+        structured_findings=findings,
+        narrative_text=narrative,
+        pdf_path=pdf_path,
+    )
+
+
+@router.get("/{patient_id}/reports", response_model=list[ReportListItem])
+def get_patient_reports(patient_id: int, db: Session = Depends(get_db)):
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found.")
+    return db.query(Report).filter(Report.patient_id == patient_id).order_by(Report.generated_at.desc()).all()
+
+
+@router.get("/{patient_id}/reports/{report_id}", response_model=ReportListItem)
+def get_patient_report_detail(patient_id: int, report_id: int, db: Session = Depends(get_db)):
+    report = db.query(Report).filter(Report.id == report_id, Report.patient_id == patient_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+    return report
+
+
+@router.post("/{patient_id}/reports/{report_id}/pdf")
+def generate_or_regenerate_pdf(patient_id: int, report_id: int, db: Session = Depends(get_db)):
+    """Explicitly generates or re-generates the PDF for a specific report."""
+    report = db.query(Report).filter(Report.id == report_id, Report.patient_id == patient_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+
+    pdf_path = generate_report_pdf(report.id, db)
+    if not pdf_path or not os.path.exists(pdf_path):
+        raise HTTPException(status_code=500, detail="Failed to generate PDF report.")
+
+    return {"report_id": report.id, "pdf_path": pdf_path, "status": "generated"}
+
+
+@router.get("/{patient_id}/reports/{report_id}/pdf")
+def download_report_pdf(patient_id: int, report_id: int, db: Session = Depends(get_db)):
+    """Downloads the compiled clinical PDF report."""
+    report = db.query(Report).filter(Report.id == report_id, Report.patient_id == patient_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+
+    pdf_path = report.pdf_path
+    if not pdf_path or not os.path.exists(pdf_path):
+        # Auto-generate if missing or not yet generated
+        pdf_path = generate_report_pdf(report.id, db)
+
+    if not pdf_path or not os.path.exists(pdf_path):
+        raise HTTPException(status_code=500, detail="PDF report could not be generated.")
+
+    return FileResponse(
+        path=pdf_path,
+        media_type="application/pdf",
+        filename=f"NeuroScan_Report_{report.id}.pdf",
+    )

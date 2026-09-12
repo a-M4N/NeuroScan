@@ -1,0 +1,29 @@
+**CLINICAL STUDY SUMMARY**  
+- **Patient Name:** Eleanor Vance  
+- **Medical Record Number (MRN):** MRN-LONG-2026  
+- **Date of Birth:** Not provided  
+- **Total Scans on Record:** 2  
+- **Scope of Assessment:** Automated AI imaging analysis for brain tumor categorization.
+
+---
+
+**OBJECTIVE FINDINGS**  
+- **Condition Assessed:** Brain Tumor  
+- **Current Scan Acquisition:** September 6, 2026 at 15:19:23 UTC (Scan ID: 114 / Prediction ID: 40)  
+  - **Classification:** Glioma  
+  - **Model Confidence:** 100.0% (Glioma: 99.999%; Meningioma: <0.01%; No Tumor: <0.01%; Pituitary: <0.01%)  
+  - **Spatial Focus (Image-Slice Coordinate):** Heatmap localization indicates that model attention was concentrated in the central aspect of the imaged slice. *Note: This represents a 2D image-coordinate centroid and does not denote a confirmed anatomical structure or specific neuroanatomical region.*
+
+---
+
+**LONGITUDINAL COMPARISON**  
+- **Condition:** Brain Tumor  
+- **Prior Scan Comparison:** Prior scan acquired September 6, 2026 at 15:19:22 UTC (Scan ID: 113 / Prediction ID: 39; classified as "no_tumor" with 100.0% confidence).  
+- **Trend Status:** Insufficient Interval  
+- **Assessment:** The current scan was acquired less than one second following the preceding scan. This brief timeframe between scans is well below the threshold required for clinical follow-up and precludes any meaningful longitudinal or disease progression assessment. This rapid succession most likely reflects an immediate re-run, duplicate data upload, or quality assurance (QA) acquisition. Accordingly, the discrepancy in classification between these two scans cannot be interpreted as genuine clinical change, tumor progression, or biological regression.
+
+---
+
+**IMPRESSION**  
+1. Current imaging analysis classifies the study as glioma with 100.0% model confidence, with model attention focused in the central aspect of the image slice.  
+2. Longitudinal evaluation is non-diagnostic due to an insufficient inter-scan interval (<1 second), consistent with duplicate or rapid repeat/QA data capture rather than measurable clinical trajectory.

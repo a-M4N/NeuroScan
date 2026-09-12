@@ -3,5 +3,6 @@ __pycache__
 *.pyc
 .git
 data/
-models/checkpoints/
 notebooks/.ipynb_checkpoints
+frontend/node_modules/
+frontend/dist/

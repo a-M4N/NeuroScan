@@ -1,13 +1,20 @@
 """
-POST /predict — run tumor classification on an uploaded brain MRI scan.
+POST /predict — run disease classification on an uploaded brain MRI scan.
+
+Unified across all disease types (Phase 5+): the caller specifies
+disease_type, and the model/Grad-CAM/class-labels used are resolved
+from DISEASE_CONFIGS via the model registry. Adding a new disease later
+means adding an entry to DISEASE_CONFIGS — this file doesn't change.
 
 Flow:
-  1. Save the uploaded file to a temp path
-  2. Preprocess it into a model-ready tensor (api/core/preprocessing.py)
-  3. Run inference -> class + confidence + full probability distribution
-  4. If a tumor is detected, generate a Grad-CAM heatmap (api/core/gradcam.py)
-  5. Persist Scan + Prediction records to the DB
-  6. Return a PredictionResponse
+  1. Validate disease_type against DISEASE_CONFIGS
+  2. Save the uploaded file to a temp path
+  3. Preprocess it into a model-ready tensor (api/core/preprocessing.py)
+  4. Run inference -> class + confidence + full probability distribution
+  5. If the predicted class isn't that disease's negative class, generate
+     a Grad-CAM heatmap (api/core/gradcam.py)
+  6. Persist Scan + Prediction records to the DB
+  7. Return a PredictionResponse
 """
 
 import logging
@@ -26,15 +33,13 @@ from api.core.preprocessing import get_rgb_array_for_gradcam, preprocess
 from api.db.database import get_db
 from api.db.models import Patient, Prediction, Scan
 from api.schemas.predict import PredictErrorResponse, PredictionResponse
-from models.src.model import CLASS_LABELS
+from models.src.disease_configs import DISEASE_CONFIGS
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/predict", tags=["predict"])
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".nii", ".gz", ".dcm"}
-
-DISEASE_TYPE = "brain_tumor"  # only classifier active as of Phase 3/4
 
 
 @router.post(
@@ -45,15 +50,51 @@ DISEASE_TYPE = "brain_tumor"  # only classifier active as of Phase 3/4
 async def predict(
     file: UploadFile = File(..., description="Brain MRI scan: jpg/png, .nii/.nii.gz, or .dcm"),
     patient_id: str = Form(..., description="ID of the patient this scan belongs to"),
+    disease_type: str = Form(
+        ..., description=f"One of: {sorted(DISEASE_CONFIGS.keys())}"
+    ),
     slice_index: int | None = Form(
         default=None,
         description="Axial slice to analyze for NIfTI/DICOM volumes. Defaults to middle slice.",
     ),
+    gradcam_brightness_threshold: float = Form(
+        default=0.15,
+        description=(
+        "Experimental: pixels below this brightness (0-1) in the MRI slice are "
+        "masked out of the Grad-CAM before overlay/region derivation, to reduce "
+        "background/skull-edge activation. Tune per scan if heatmaps look off."
+    ),
+    ),
+    gradcam_erosion_pixels: int = Form(
+        default=12,
+        description=(
+            "Experimental: how many pixels to erode inward from the detected "
+            "head boundary before Grad-CAM overlay/region derivation, to "
+            "exclude skull/scalp-edge activation. Higher = more aggressive."
+        ),
+),
     db: Session = Depends(get_db),
 ):
+    # --- 0. Validate disease_type against the live registry ---
+    if disease_type not in DISEASE_CONFIGS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown disease_type '{disease_type}'. Expected one of: {sorted(DISEASE_CONFIGS.keys())}",
+        )
+    cfg = DISEASE_CONFIGS[disease_type]
+
     # --- 1. Validate file type early ---
-    suffix = Path(file.filename).suffix.lower()
-    if suffix not in ALLOWED_EXTENSIONS and not file.filename.lower().endswith(".nii.gz"):
+    # Path.suffix only captures the LAST extension (.gz for "scan.nii.gz"),
+    # so compound extensions need explicit handling — both here and again
+    # in step 3 when constructing the temp filename, since nibabel needs
+    # the full ".nii.gz" to correctly infer gzipped-NIfTI format.
+    original_name_lower = file.filename.lower()
+    if original_name_lower.endswith(".nii.gz"):
+        suffix = ".nii.gz"
+    else:
+        suffix = Path(file.filename).suffix.lower()
+
+    if suffix not in ALLOWED_EXTENSIONS and suffix != ".nii.gz":
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type '{suffix}'. Expected one of: {sorted(ALLOWED_EXTENSIONS)}",
@@ -70,7 +111,8 @@ async def predict(
     # --- 3. Save upload to a temp path ---
     tmp_dir = Path(tempfile.gettempdir()) / "neuroscan_uploads"
     tmp_dir.mkdir(exist_ok=True)
-    tmp_path = tmp_dir / f"{uuid.uuid4().hex}{suffix if suffix else Path(file.filename).suffix}"
+    tmp_path = tmp_dir / f"{uuid.uuid4().hex}{suffix}"  # suffix already correctly
+                                                          # includes ".nii.gz" when applicable
 
     try:
         with open(tmp_path, "wb") as f:
@@ -87,10 +129,10 @@ async def predict(
     permanent_scan_path = scans_dir / tmp_path.name
     shutil.copy(tmp_path, permanent_scan_path)
 
-    # --- 5. Run preprocessing + inference ---
+    # --- 5. Run preprocessing + inference (model/cam resolved by disease_type) ---
     try:
-        model = model_loader.get_model()
-        cam = model_loader.get_cam()
+        model = model_loader.get_model(disease_type)
+        cam = model_loader.get_cam(disease_type)
         device = model_loader.get_device()
 
         input_tensor = preprocess(tmp_path, slice_index=slice_index).to(device)
@@ -102,7 +144,7 @@ async def predict(
             confidence = float(probabilities[pred_idx].item())
 
         all_class_probabilities = {
-            CLASS_LABELS[i]: float(probabilities[i].item()) for i in range(len(CLASS_LABELS))
+            cfg.class_labels[i]: float(probabilities[i].item()) for i in range(len(cfg.class_labels))
         }
 
     except FileNotFoundError as e:
@@ -116,15 +158,35 @@ async def predict(
         logger.exception("Inference failed")
         raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
 
-    # --- 6. Grad-CAM (skip for no_tumor) ---
+        # --- 6. Grad-CAM (skip for this disease's negative class) ---
     heatmap_url = None
-    predicted_label = CLASS_LABELS[pred_idx]
+    heatmap_fs_path = None
+    affected_region = None
+    predicted_label = cfg.class_labels[pred_idx]
 
-    if predicted_label != "no_tumor":
+    if cfg.negative_class is None or predicted_label != cfg.negative_class:
         try:
             rgb_img = get_rgb_array_for_gradcam(tmp_path, slice_index=slice_index)
-            result = generate_heatmap(cam, input_tensor, rgb_img, pred_idx)
-            heatmap_url = result["heatmap_path"]
+            negative_idx = (
+                cfg.class_labels.index(cfg.negative_class)
+                if cfg.negative_class is not None else None
+            )
+
+            result = generate_heatmap(
+                cam, input_tensor, rgb_img, pred_idx,
+                negative_class_idx=negative_idx,
+                brightness_threshold=gradcam_brightness_threshold,
+                erosion_pixels=gradcam_erosion_pixels,
+            )
+
+            heatmap_url = result.get("heatmap_url")
+            heatmap_fs_path = result.get("heatmap_path")
+            grayscale_cam = result["grayscale_cam"]
+
+            if cfg.region_mapping_enabled and grayscale_cam is not None:
+                from api.core.region_mapping import derive_affected_region
+                region_info = derive_affected_region(grayscale_cam)
+                affected_region = region_info["affected_region"]
         except Exception:
             logger.exception("Grad-CAM generation failed; returning prediction without heatmap")
 
@@ -146,10 +208,15 @@ async def predict(
 
         prediction = Prediction(
             scan_id=scan.id,
-            disease_type=DISEASE_TYPE,
+            disease_type=disease_type,
             predicted_class=predicted_label,
             confidence=confidence,
-            gradcam_path=heatmap_url,
+            gradcam_path=heatmap_fs_path,
+            extra_data={
+                "all_class_probabilities": all_class_probabilities,
+                "affected_region": affected_region,  # NEW, may be None
+            },
+            model_version=Path(cfg.checkpoint_path).name,
         )
         db.add(prediction)
         db.commit()
@@ -161,8 +228,10 @@ async def predict(
         # the classification itself succeeded. Log loudly and continue.
 
     return PredictionResponse(
+        disease_type=disease_type,
         disease=predicted_label,
         confidence=confidence,
         heatmap_url=heatmap_url,
         all_class_probabilities=all_class_probabilities,
+        affected_region=affected_region,  # NEW
     )

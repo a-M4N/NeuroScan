@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NeuroScan Report #{{ report_id }}</title>
+  <style>
+    @page {
+      size: letter;
+      margin: 18mm 16mm 22mm 16mm;
+      @bottom-left {
+        content: "NeuroScan AI Decision Support System • Strictly Confidential Medical Record";
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 7.5pt;
+        color: #64748b;
+      }
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-size: 7.5pt;
+        font-weight: 600;
+        color: #475569;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.45;
+      color: #1e293b;
+      background: #ffffff;
+    }
+
+    /* Header Bar */
+    .header-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #0f2942;
+    }
+
+    .header-table td {
+      vertical-align: middle;
+    }
+
+    .brand-title {
+      font-size: 17pt;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #0f2942;
+      text-transform: uppercase;
+    }
+
+    .brand-subtitle {
+      font-size: 8pt;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      color: #0284c7;
+      text-transform: uppercase;
+      margin-top: 1px;
+    }
+
+    .report-meta {
+      text-align: right;
+      font-size: 8.5pt;
+      color: #475569;
+    }
+
+    .report-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 8.5pt;
+      color: #0f2942;
+      margin-bottom: 3px;
+    }
+
+    /* Patient Details Card */
+    .patient-card {
+      width: 100%;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 14px;
+    }
+
+    .patient-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .patient-table td {
+      padding: 3px 6px;
+      font-size: 9pt;
+      vertical-align: top;
+    }
+
+    .meta-label {
+      color: #64748b;
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .meta-value {
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    /* Section Headings */
+    .section-title {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #0f2942;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin: 14px 0 8px 0;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #e2e8f0;
+      page-break-after: avoid;
+    }
+
+    /* Disease Card */
+    .disease-block {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      page-break-inside: avoid;
+    }
+
+    .disease-header {
+      background: #f1f5f9;
+      padding: 8px 12px;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 10pt;
+      font-weight: 700;
+      color: #0f2942;
+    }
+
+    .disease-body {
+      padding: 10px 12px;
+    }
+
+    /* Metrics Table */
+    .metrics-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+    }
+
+    .metrics-table th {
+      background: #f8fafc;
+      color: #475569;
+      font-size: 7.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      padding: 5px 8px;
+      text-align: left;
+      border-bottom: 1px solid #cbd5e1;
+    }
+
+    .metrics-table td {
+      padding: 6px 8px;
+      font-size: 8.5pt;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    /* Status Badges */
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .badge-positive {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+
+    .badge-negative {
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+    }
+
+    .badge-warning {
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+    }
+
+    .badge-info {
+      background: #e0f2fe;
+      color: #075985;
+      border: 1px solid #bae6fd;
+    }
+
+    /* Visual Grid for Scan and Grad-CAM */
+    .visual-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      page-break-inside: avoid;
+    }
+
+    .visual-table td {
+      width: 50%;
+      text-align: center;
+      padding: 6px;
+      vertical-align: top;
+    }
+
+    .img-box {
+      background: #000000;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 3px;
+      display: inline-block;
+    }
+
+    .scan-image {
+      max-width: 100%;
+      height: 180px;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto;
+    }
+
+    .image-caption {
+      font-size: 7.5pt;
+      font-weight: 600;
+      color: #64748b;
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    /* Longitudinal Section */
+    .longitudinal-block {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-left: 4px solid #0284c7;
+      border-radius: 4px;
+      padding: 9px 12px;
+      margin-top: 8px;
+      page-break-inside: avoid;
+    }
+
+    .longitudinal-title {
+      font-size: 8.5pt;
+      font-weight: 700;
+      color: #0369a1;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .longitudinal-summary {
+      font-size: 8.5pt;
+      color: #334155;
+      line-height: 1.4;
+    }
+
+    /* Narrative Container */
+    .narrative-block {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 12px 14px;
+      background: #ffffff;
+      margin-bottom: 14px;
+      page-break-inside: avoid;
+    }
+
+    .narrative-content {
+      font-size: 9pt;
+      line-height: 1.5;
+      color: #1e293b;
+    }
+
+    .narrative-content h1, .narrative-content h2, .narrative-content h3 {
+      font-size: 9.5pt;
+      font-weight: 700;
+      color: #0f2942;
+      margin: 10px 0 4px 0;
+      text-transform: uppercase;
+      letter-spacing: 0.2px;
+    }
+
+    .narrative-content h1:first-child, .narrative-content h2:first-child {
+      margin-top: 0;
+    }
+
+    .narrative-content p {
+      margin-bottom: 8px;
+    }
+
+    .narrative-content ul, .narrative-content ol {
+      margin-left: 18px;
+      margin-bottom: 8px;
+    }
+
+    .narrative-content li {
+      margin-bottom: 3px;
+    }
+
+    /* Disclaimer / Clinical Safety */
+    .disclaimer-card {
+      border: 1px solid #fde68a;
+      background: #fffbeb;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-top: 14px;
+      page-break-inside: avoid;
+    }
+
+    .disclaimer-title {
+      font-size: 8pt;
+      font-weight: 800;
+      color: #b45309;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      margin-bottom: 3px;
+    }
+
+    .disclaimer-text {
+      font-size: 7pt;
+      color: #92400e;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <table class="header-table">
+    <tr>
+      <td>
+        <div class="brand-title">NeuroScan</div>
+        <div class="brand-subtitle">Automated Brain MRI Diagnostic &amp; Longitudinal Analysis System</div>
+      </td>
+      <td class="report-meta">
+        <div class="report-badge">REPORT #{{ report_id }}</div>
+        <div><strong>Date Generated:</strong> {{ generated_at_formatted }}</div>
+        <div><strong>Facility:</strong> NeuroScan AI Diagnostic Center</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Patient Demographic & Clinical Context -->
+  <div class="patient-card">
+    <table class="patient-table">
+      <tr>
+        <td style="width: 30%;">
+          <div class="meta-label">Patient Name</div>
+          <div class="meta-value">{{ patient.name }}</div>
+        </td>
+        <td style="width: 25%;">
+          <div class="meta-label">Medical Record Number (MRN)</div>
+          <div class="meta-value">{{ patient.mrn }}</div>
+        </td>
+        <td style="width: 25%;">
+          <div class="meta-label">Date of Birth</div>
+          <div class="meta-value">{{ dob_formatted }}</div>
+        </td>
+        <td style="width: 20%;">
+          <div class="meta-label">Total Scans Evaluated</div>
+          <div class="meta-value">{{ findings.total_scans }}</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- Objective Diagnostic Findings -->
+  <div class="section-title">Objective Algorithmic Findings</div>
+
+  {% for disease_key, d in findings.diseases.items() %}
+  <div class="disease-block">
+    <div class="disease-header">
+      {{ disease_key | replace('_', ' ') | title }} Evaluation
+    </div>
+    <div class="disease-body">
+      <table class="metrics-table">
+        <thead>
+          <tr>
+            <th>Current Classification</th>
+            <th>Confidence</th>
+            <th>Primary Affected Region</th>
+            <th>Scan Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>
+              {% set p_class = d.latest.predicted_class %}
+              {% if p_class in ['no_tumor', 'non_demented', 'negative', 'normal'] %}
+                <span class="badge badge-negative">{{ p_class | replace('_', ' ') | title }}</span>
+              {% elif p_class in ['glioma', 'meningioma', 'moderate_demented', 'severe'] %}
+                <span class="badge badge-positive">{{ p_class | replace('_', ' ') | title }}</span>
+              {% else %}
+                <span class="badge badge-warning">{{ p_class | replace('_', ' ') | title }}</span>
+              {% endif %}
+            </td>
+            <td><strong>{{ (d.latest.confidence * 100) | round(1) }}%</strong></td>
+            <td>{{ d.latest.affected_region | replace('_', ' ') | title if d.latest.affected_region else 'Diffuse / Unspecified' }}</td>
+            <td>{{ d.latest.date[:10] if d.latest.date else 'N/A' }}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Side-by-side Visuals: Raw MRI Slice and Grad-CAM Attention Map -->
+      {% if d.latest.scan_uri or d.latest.gradcam_uri %}
+      <table class="visual-table">
+        <tr>
+          {% if d.latest.scan_uri %}
+          <td>
+            <div class="img-box">
+              <img src="{{ d.latest.scan_uri }}" class="scan-image" alt="Original MRI Slice" />
+            </div>
+            <div class="image-caption">Input MRI Slice</div>
+          </td>
+          {% endif %}
+          {% if d.latest.gradcam_uri %}
+          <td>
+            <div class="img-box">
+              <img src="{{ d.latest.gradcam_uri }}" class="scan-image" alt="Grad-CAM Saliency Overlay" />
+            </div>
+            <div class="image-caption">Grad-CAM Spatial Attention Map</div>
+          </td>
+          {% endif %}
+        </tr>
+      </table>
+      {% endif %}
+
+      <!-- Longitudinal Trend Block (if present) -->
+      {% if d.trend %}
+      <div class="longitudinal-block">
+        <div class="longitudinal-title">
+          Longitudinal Trajectory: 
+          {% set t_label = d.trend.trend_label %}
+          {% if t_label in ['progression', 'new_finding'] %}
+            <span class="badge badge-positive">{{ t_label | replace('_', ' ') | title }}</span>
+          {% elif t_label in ['regression', 'resolved'] %}
+            <span class="badge badge-negative">{{ t_label | replace('_', ' ') | title }}</span>
+          {% elif t_label == 'insufficient_interval' %}
+            <span class="badge badge-warning">Insufficient Interval (Non-Diagnostic)</span>
+          {% else %}
+            <span class="badge badge-info">{{ t_label | replace('_', ' ') | title }}</span>
+          {% endif %}
+        </div>
+        <div class="longitudinal-summary">
+          {{ d.trend.summary }}
+          {% if d.trend.previous_class and d.trend.current_class and t_label != 'insufficient_interval' %}
+            <br />
+            <strong>Prior Status:</strong> {{ d.trend.previous_class | replace('_', ' ') | title }} ({{ (d.trend.previous_confidence * 100) | round(1) }}%) on {{ d.trend.previous_scan_date[:10] if d.trend.previous_scan_date else 'Prior' }}
+            &rarr;
+            <strong>Current Status:</strong> {{ d.trend.current_class | replace('_', ' ') | title }} ({{ (d.trend.current_confidence * 100) | round(1) }}%)
+            ({{ '+' if d.trend.confidence_delta >= 0 else '' }}{{ (d.trend.confidence_delta * 100) | round(1) }}% conf delta).
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endfor %}
+
+  <!-- Clinical Narrative / Impression -->
+  <div class="section-title">Radiological Impression &amp; Clinical Narrative</div>
+  <div class="narrative-block">
+    <div class="narrative-content">
+      {{ narrative_html | safe }}
+    </div>
+  </div>
+
+  <!-- Disclaimer and Safety Footer -->
+  <div class="disclaimer-card">
+    <div class="disclaimer-title">Clinical Decision Support Advisory &amp; Regulatory Notice</div>
+    <div class="disclaimer-text">
+      This diagnostic report has been automatically assembled by the NeuroScan AI Decision Support System utilizing deep convolutional neural networks and the Google Gemini Flash clinical narrative generation model. This system is designed solely to augment medical imaging interpretation and does NOT represent an autonomous medical diagnosis. Grad-CAM saliency heatmaps highlight regions of model activation, which may reflect artifacts or normal anatomical variations alongside pathological tissue. All algorithmic findings and spatial attributions must be independently reviewed and verified by a board-certified radiologist or attending neurologist prior to clinical intervention.
+    </div>
+  </div>
+
+</body>
+</html>

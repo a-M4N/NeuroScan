@@ -10,7 +10,7 @@ from sqlalchemy import (
     Text,
 )
 from sqlalchemy.orm import relationship
-
+from sqlalchemy import JSON 
 from api.db.database import Base
 
 
@@ -45,10 +45,12 @@ class Prediction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     scan_id = Column(Integer, ForeignKey("scans.id"), nullable=False)
-    disease_type = Column(String, nullable=False)  # e.g. "brain_tumor"
-    predicted_class = Column(String, nullable=False)  # e.g. "glioma"
+    disease_type = Column(String, nullable=False, index=True)  # added index
+    predicted_class = Column(String, nullable=False)
     confidence = Column(Float, nullable=False)
     gradcam_path = Column(String, nullable=True)
+    extra_data = Column(JSON, nullable=True)      # NEW — per-disease structured extras
+    model_version = Column(String, nullable=True) # NEW — checkpoint filename/tag used
     created_at = Column(DateTime, default=datetime.utcnow)
 
     scan = relationship("Scan", back_populates="predictions")

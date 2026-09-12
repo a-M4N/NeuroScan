@@ -6,12 +6,21 @@ Responsible only for: app instantiation, wiring the model lifecycle
 endpoint logic lives in api/routers/.
 """
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from api.core import model_loader
-from api.routers import predict,patients
+from api.routers import predict, patients
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -35,8 +44,21 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(predict.router)
 app.include_router(patients.router)
+
+app.mount("/data", StaticFiles(directory="data"), name="data")
 
 @app.get("/health")
 def health_check():
